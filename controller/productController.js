@@ -1,7 +1,25 @@
 import slugify from "slugify"
 import productModel from "../models/productModel.js"
+import categoryModel from '../models/categoryModel.js'
 import fs from 'fs'
 import router from "../routes/authRout.js"
+import braintree from "braintree";
+import orderModel from "../models/orderModel.js";
+import dotenv from 'dotenv';
+dotenv.config();
+
+
+
+
+//payment gateway
+var gateway = new braintree.BraintreeGateway({
+    environment: braintree.Environment.Sandbox,
+    merchantId: process.env.BRAINTREE_MERCHENT_ID,
+    publicKey: process.env.BRAINTREE_PUBLIC_KEY,
+    privateKey: process.env.BRAINTREE_PRIVATE_KEY,
+});
+
+
 
 export const createProductController = async (req, res) => {
     try {
@@ -219,7 +237,7 @@ export const productCountController = async (req, res) => {
 
 export const productListController = async (req, res) => {
     try {
-        const perPage = 4
+        const perPage = 6
         const page = req.params.page ? req.params.page : 1
         const products = await productModel.find({}).select('-Photo').skip((page - 1) * perPage).limit(perPage).sort({ createdAt: -1 })
         res.status(200).send({
@@ -237,4 +255,159 @@ export const productListController = async (req, res) => {
 }
 
 
+// Search product
+export const searchProductController = async (req, res) => {
+    try {
+        const { keyword } = req.params
+        const result = await productModel.find({
+            $or: [
+                { name: { $regex: keyword, $options: 'i' } },
+                { description: { $regex: keyword, $options: 'i' } },
+            ]
+        }).select("-photo")
+        res.json(result)
 
+    } catch (error) {
+        console.log(error)
+        res.status(400).send({
+            success: false,
+            message: 'Error in search product',
+            error
+        })
+    }
+}
+
+// similar products
+
+export const relatedProductController = async (req, res) => {
+    try {
+        const { pid, cid } = req.params
+        const product = await productModel.find({
+            category: cid,
+            _id: { $ne: pid }
+        }).select('-photo').limit(2).populate('category')
+        res.status(200).send({
+            success: true,
+            product,
+        })
+
+    } catch (error) {
+        console.log(error)
+        res.send(400).send({
+            success: false,
+            message: 'Error while getting related product',
+            error
+        })
+    }
+}
+
+// get product by get
+export const productCategoryController = async (req, res) => {
+    try {
+        const category = await categoryModel.findOne({ slug: req.params.slug })
+        const products = await productModel.find({ category }).populate('category')
+        res.status(200).send({
+            success: true,
+            category,
+            products,
+        })
+    } catch (error) {
+        console.log(error)
+        res.status(400).send({
+            success: false,
+            message: 'Error while getting products',
+            error,
+        })
+    }
+}
+
+//payment gateway api
+//token
+export const braintreeTokenController = async (req, res) => {
+    try {
+        gateway.clientToken.generate({}, function (err, response) {
+            if (err) {
+                res.status(500).send(err);
+            } else {
+                res.send(response);
+            }
+        });
+    } catch (error) {
+        console.log(error);
+    }
+};
+
+//payment
+export const braintreePaymentController = async (req, res) => {
+    try {
+        const { nonce, cart } = req.body;
+        let total = 0
+        cart.map((i) => { total += i.price })
+        let newTransaction = gateway.transaction.sale({
+            amount: total,
+            paymentMethodNonce: nonce,
+            options: {
+                submitForSettlement: true
+            }
+        },
+            function (error, result) {
+                if (result) {
+                    const order = new orderModel({
+                        products: cart,
+                        payment: result,
+                        buyer: req.user._id
+                    }).save()
+                    res.json({ ok: true })
+                } else { 
+                    res.status(500).send(error)
+                }
+            }
+        )
+
+
+
+    } catch (error) {
+        console.log(error);
+    }
+};
+
+
+
+
+
+// const { nonce, cart } = req.body;
+
+// // Check if the cart is provided and it's an array
+// if (!cart || !Array.isArray(cart)) {
+//     return res.status(400).json({ error: 'Cart is missing or invalid' });
+// }
+
+// // Calculate the total amount from the cart items
+// let total = 0;
+// cart.forEach((item) => {
+//     total += item.price;
+// });
+
+// // Process the transaction
+// gateway.transaction.sale(
+//     {
+//         amount: total,
+//         paymentMethodNonce: nonce,
+//         options: {
+//             submitForSettlement: true,
+//         },
+//     },
+//     function (error, result) {
+//         if (result) {
+//             // Save the order details
+//             const order = new orderModel({
+//                 products: cart,
+//                 payment: result,
+//                 buyer: req.user._id,
+//             }).save();
+//             res.json({ ok: true });
+//         } else {
+//             res.status(500).send(error);
+//         }
+//     }
+// );

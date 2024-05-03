@@ -1,5 +1,5 @@
 import express, { Router } from 'express';
-import { registerController, loginController, textController, forgetPasswordController } from '../controller/authController.js';
+import { registerController, loginController, textController, forgetPasswordController, updateProfileController, getOrdersController, getAllOrdersController, getOrdersStatusController } from '../controller/authController.js';
 import { isAdmin, requireSingIn } from '../middlewares/authMiddleware.js';
 
 // router object
@@ -30,6 +30,22 @@ router.get('/user-auth', requireSingIn, (req, res) => {
 router.get('/admin-auth', requireSingIn, isAdmin, (req, res) => {
     res.status(200).send({ ok: true });
 });
+
+//update profile
+router.put('/profile', requireSingIn, updateProfileController)
+
+
+//order
+router.get("/orders", requireSingIn, getOrdersController)
+
+//All-order
+router.get("/all-orders", requireSingIn, getAllOrdersController)
+
+
+//order-Status Update
+router.put("/orders-status/:orderId", requireSingIn, isAdmin, getOrdersStatusController)
+
+
 
 
 
